@@ -1,6 +1,4 @@
-export type TodoStatus = "pending" | "in_progress" | "completed";
-
-export type TaskStatus = TodoStatus | "blocked";
+export type TaskStatus = "pending" | "in_progress" | "completed" | "blocked";
 
 export type BackgroundTaskStatus = "running" | "completed" | "failed";
 
@@ -15,12 +13,6 @@ export interface Task {
   blocks: Array<number>;
   createdAt: number;
   updatedAt: number;
-}
-
-export interface TodoItem {
-  id: string;
-  desc: string;
-  status: TodoStatus;
 }
 
 export interface TranscriptMetadata {

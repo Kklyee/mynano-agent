@@ -3,12 +3,11 @@ import path from "node:path";
 import { execa } from "execa";
 import type OpenAI from "openai";
 import { runSubagent } from "../services/subagent";
-import { TodoManager } from "../services/todo-manager";
 import type { BackgroundManager } from "../services/background-manager";
 import type { CompactManager } from "../services/compact-manager";
 import type { SkillLoader } from "../services/skill-loader";
 import type { TaskManager } from "../services/task-manager";
-import type { Task, TodoItem } from "../services/types";
+import type { Task } from "../services/types";
 import type { ToolsType } from "./types";
 
 export function safePath(relativePath: string, workDir: string): string {
@@ -21,7 +20,6 @@ export function safePath(relativePath: string, workDir: string): string {
 
 export interface ToolContext {
   workDir: string;
-  todoManager: TodoManager;
   skillLoader: SkillLoader;
   client: OpenAI;
   model: string;
@@ -136,35 +134,6 @@ const toolDefinitions: ToolDefinition[] = [
       const updatedText = text.replace(oldText, newText);
       await fs.writeFile(fullPath, updatedText);
       return `已经编辑 ${filePath}`;
-    },
-  },
-  {
-    name: "todo_write",
-    description: "更新简单任务列表，适合单轮多步骤任务",
-    parameters: {
-      type: "object",
-      properties: {
-        items: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              id: { type: "string" },
-              desc: { type: "string" },
-              status: {
-                type: "string",
-                enum: ["pending", "in_progress", "completed"],
-              },
-            },
-            required: ["id", "desc", "status"],
-          },
-        },
-      },
-      required: ["items"],
-    },
-    handler: async ({ items }, { todoManager }) => {
-      const todoItems = Array.isArray(items) ? items : [];
-      return `任务列表已更新:\n${todoManager.update(todoItems as TodoItem[])}`;
     },
   },
   {

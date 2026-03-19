@@ -94,7 +94,6 @@ export class CompactManager {
   private inferToolName(content: string): string {
     if (content.includes("已经写入")) return "write_file";
     if (content.includes("已经编辑")) return "edit_file";
-    if (content.includes("任务列表")) return "todo_write";
     if (content.includes("子智能体")) return "delegate_to_subagent";
     if (content.includes("total ")) return "bash";
     return "tool";

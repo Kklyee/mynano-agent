@@ -764,7 +764,6 @@ function getToolVisual(name: string): {
 
   if (
     normalized.includes("task") ||
-    normalized.includes("todo") ||
     normalized.includes("plan")
   ) {
     return {

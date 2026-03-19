@@ -35,7 +35,6 @@ const HIDDEN_TOOL_NAMES = new Set([
   "task_update",
   "task_list",
   "task_get",
-  "todo_write",
 ]);
 
 const setRootState = (state: AgentTransportState): AssistantStreamChunk => ({

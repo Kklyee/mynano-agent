@@ -5,7 +5,6 @@ export const mainPrompt = `你是 Mini Agent，一个专注于代码任务的 AI
 - read_file: 读取文件内容
 - write_file: 写入文件
 - edit_file: 编辑文件（替换文本）
-- todo_write: 管理简单的待办列表
 - delegate_to_subagent: 委托子任务给子代理
 - load_skill: 加载技能文件获取专门指导
 - compact: 压缩对话上下文

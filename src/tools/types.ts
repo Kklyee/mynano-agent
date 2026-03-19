@@ -3,7 +3,6 @@ export type ToolsType =
   | "read_file"
   | "edit_file"
   | "write_file"
-  | "todo_write"
   | "delegate_to_subagent"
   | "load_skill"
   | "compact"

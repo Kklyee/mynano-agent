@@ -26,7 +26,6 @@ const HIDDEN_TOOL_NAMES = new Set([
   "task_update",
   "task_list",
   "task_get",
-  "todo_write",
 ]);
 
 const statusTone: Record<AgentTransportState["session"]["status"], string> = {
@@ -177,7 +176,7 @@ function AgentWorkspaceContent() {
 
           <Panel title={`任务面板 (${state.tasks.length})`}>
             {state.tasks.length === 0 ? (
-              <EmptyState text="任务事件会聚合到这里，适合后续接 plan、todo tree 或审批流程。" />
+              <EmptyState text="任务事件会聚合到这里，适合后续接 plan tree 或审批流程。" />
             ) : (
               <div className="space-y-2">
                 {state.tasks.map((task) => {
