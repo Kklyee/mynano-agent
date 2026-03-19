@@ -1,0 +1,28 @@
+{
+  "name": "mini-agent",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node --experimental-strip-types src/cli.ts",
+    "server": "bun run src/server.ts",
+    "dev": "bun run src/server.ts",
+    "test": "vitest",
+    "test:run": "vitest run --pool=threads --maxWorkers=1",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.4.7",
+    "@types/bun": "latest",
+    "vitest": "^4.1.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "better-auth": "^1.5.5",
+    "execa": "^9.6.1",
+    "hono": "^4.12.8",
+    "openai": "^6.29.0",
+    "zod": "^4.3.6"
+  }
+}
