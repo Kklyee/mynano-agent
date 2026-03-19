@@ -125,13 +125,16 @@
   * {
     @apply border-border outline-ring/50;
   }
+
   body {
     @apply antialiased bg-background text-foreground;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
+
   html {
     @apply font-roboto-mono;
   }
+
   h1 {
     font-family: var(--font-heading);
     font-size: 2.25rem;
@@ -139,6 +142,7 @@
     letter-spacing: -0.03em;
     font-weight: 700;
   }
+
   h2 {
     font-family: var(--font-heading);
     font-size: 1.875rem;
@@ -146,6 +150,7 @@
     letter-spacing: -0.025em;
     font-weight: 600;
   }
+
   h3 {
     font-family: var(--font-heading);
     font-size: 1.5rem;
@@ -153,15 +158,22 @@
     letter-spacing: -0.02em;
     font-weight: 600;
   }
-  h4, h5, h6 {
+
+  h4,
+  h5,
+  h6 {
     font-family: var(--font-heading);
     letter-spacing: -0.01em;
   }
-  body, p {
+
+  body,
+  p {
     font-family: var(--font-body);
     line-height: 1.6;
   }
-  code, pre {
+
+  code,
+  pre {
     font-family: var(--font-mono);
   }
 }
@@ -213,6 +225,7 @@
   from {
     opacity: 0;
   }
+
   to {
     opacity: 1;
   }
@@ -223,6 +236,7 @@
     opacity: 0;
     transform: translateY(10px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);

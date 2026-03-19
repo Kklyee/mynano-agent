@@ -8,6 +8,7 @@ export type AgentBackendEvent =
   | { type: "tool.completed"; sessionId: string; name: string; result: string }
   | { type: "task.created"; sessionId: string; taskId: number; subject: string }
   | { type: "task.updated"; sessionId: string; taskId: number; status: string }
+  | { type: "background.started"; sessionId: string; taskId: string; status: string }
   | { type: "background.updated"; sessionId: string; taskId: string; status: string }
   | { type: "session.completed"; sessionId?: string; result?: string; output?: string; steps?: number }
   | { type: "session.failed"; sessionId?: string; error: string };
@@ -35,6 +36,9 @@ export type AgentTool = {
 export type AgentTask = {
   taskId: number;
   subject?: string;
+  description?: string;
+  owner?: string;
+  blockedBy?: number[];
   status: string;
   updatedAt: string;
   sequence?: number;
@@ -42,6 +46,11 @@ export type AgentTask = {
 
 export type AgentBackgroundTask = {
   taskId: string;
+  command?: string;
+  summary?: string;
+  exitCode?: number | null;
+  startedAt?: string;
+  completedAt?: string;
   status: string;
   updatedAt: string;
   sequence?: number;

@@ -40,3 +40,24 @@ export interface BackgroundNotification {
   command: string;
   message: string;
 }
+
+export interface TaskManagerContract {
+  create(subject: string, description?: string, blockedBy?: number[]): Promise<Task>;
+  update(
+    taskId: number,
+    updates: Partial<Pick<Task, "status" | "owner" | "blockedBy" | "description">>,
+  ): Promise<Task>;
+  get(taskId: number): Promise<Task | null>;
+  listAll(): Promise<Task[]>;
+  getReadyTasks(): Promise<Task[]>;
+  getBlockedTasks(): Promise<Task[]>;
+  getInProgressTasks(): Promise<Task[]>;
+  renderTasks(tasks: Task[]): string;
+}
+
+export interface BackgroundManagerContract {
+  run(command: string, cwd: string): Promise<BackgroundTask>;
+  check(taskId: string): BackgroundTask | null;
+  list(): BackgroundTask[];
+  drainNotifications(): BackgroundNotification[];
+}

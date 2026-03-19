@@ -62,7 +62,10 @@ app.use(
 
 await ensureAuthSchema();
 
-const agent = await createAgent(createDefaultResearchAgentConfig());
+const agent = await createAgent({
+  ...createDefaultResearchAgentConfig(),
+  conversationService,
+});
 
 const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
   const session = await auth.api.getSession({
@@ -164,6 +167,7 @@ app.post("/api/conversations/:id/messages", requireAuth, async (c) => {
     });
 
     const session = await agent.createSession({
+      conversationId,
       messages: preparedRun.history,
     });
     let latestAssistantMessageId: string | null = null;
@@ -208,6 +212,13 @@ app.post("/api/conversations/:id/messages", requireAuth, async (c) => {
         }
 
         if (event.type === "task.created") {
+          conversationService.upsertTask({
+            conversationId,
+            taskId: event.taskId,
+            subject: event.subject,
+            status: "pending",
+            blockedBy: [],
+          });
           conversationService.recordTaskEvent({
             conversationId,
             taskId: event.taskId,
@@ -217,6 +228,11 @@ app.post("/api/conversations/:id/messages", requireAuth, async (c) => {
         }
 
         if (event.type === "task.updated") {
+          conversationService.upsertTask({
+            conversationId,
+            taskId: event.taskId,
+            status: event.status as "pending" | "in_progress" | "completed" | "blocked",
+          });
           conversationService.recordTaskEvent({
             conversationId,
             taskId: event.taskId,
@@ -224,10 +240,39 @@ app.post("/api/conversations/:id/messages", requireAuth, async (c) => {
           });
         }
 
+        if (event.type === "background.started" || event.type === "background.updated") {
+          const backgroundTask = session
+            .getState()
+            .backgroundTasks.find((task) => task.id === event.taskId);
+
+          conversationService.upsertBackgroundTask({
+            conversationId,
+            taskId: event.taskId,
+            command: backgroundTask?.command,
+            summary: backgroundTask?.command?.trim().split(/\s+/).slice(0, 4).join(" "),
+            status: event.status as "running" | "completed" | "failed",
+            completedAt: backgroundTask?.completedAt
+              ? new Date(backgroundTask.completedAt).toISOString()
+              : null,
+            exitCode: backgroundTask?.exitCode ?? null,
+          });
+          conversationService.recordBackgroundEvent({
+            conversationId,
+            taskId: event.taskId,
+            command: backgroundTask?.command,
+            summary: backgroundTask?.command?.trim().split(/\s+/).slice(0, 4).join(" "),
+            status: event.status as "running" | "completed" | "failed",
+          });
+        }
+
         await stream.writeSSE({
           event: event.type,
           data: JSON.stringify(event),
         });
+
+        if (event.type === "session.failed") {
+          throw new Error(event.error);
+        }
       }
 
       const finalState = session.getState();
@@ -323,3 +368,4 @@ export default {
   fetch: app.fetch,
   idleTimeout: 0,
 };
+

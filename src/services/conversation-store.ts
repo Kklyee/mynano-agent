@@ -1,13 +1,18 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type {
+  PersistedBackgroundStatus,
   PersistedConversation,
+  PersistedConversationBackgroundEvent,
+  PersistedConversationBackgroundTask,
   PersistedConversationMessage,
+  PersistedConversationStatus,
+  PersistedConversationTask,
   PersistedConversationTaskEvent,
   PersistedConversationToolCall,
-  PersistedConversationStatus,
   PersistedMessageRole,
   PersistedMessageStatus,
+  PersistedTaskStatus,
   PersistedToolStatus,
 } from "./conversation-types";
 
@@ -37,11 +42,44 @@ type AppendToolCallInput = {
   completedAt?: string | null;
 };
 
+type UpsertTaskInput = {
+  conversationId: string;
+  taskId: number;
+  subject?: string | null;
+  description?: string | null;
+  status: PersistedTaskStatus;
+  owner?: string | null;
+  blockedBy?: number[];
+  createdAt?: string;
+  updatedAt: string;
+};
+
 type AppendTaskEventInput = {
   conversationId: string;
   taskId: number;
   subject: string | null;
   status: string;
+  sequence: number;
+  updatedAt: string;
+};
+
+type UpsertBackgroundTaskInput = {
+  conversationId: string;
+  taskId: string;
+  command?: string | null;
+  summary?: string | null;
+  status: PersistedBackgroundStatus;
+  startedAt?: string;
+  completedAt?: string | null;
+  exitCode?: number | null;
+};
+
+type AppendBackgroundEventInput = {
+  conversationId: string;
+  taskId: string;
+  command: string | null;
+  summary: string | null;
+  status: PersistedBackgroundStatus;
   sequence: number;
   updatedAt: string;
 };
@@ -56,6 +94,17 @@ type SqliteDatabase = {
   exec: (sql: string) => void;
   prepare: (sql: string) => Statement;
   close: () => void;
+};
+
+const parseBlockedBy = (value: unknown): number[] => {
+  if (typeof value !== "string" || !value) return [];
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? parsed.map((item) => Number(item)).filter(Number.isFinite) : [];
+  } catch {
+    return [];
+  }
 };
 
 const toConversation = (row: Record<string, unknown>): PersistedConversation => ({
@@ -93,12 +142,46 @@ const toToolCall = (row: Record<string, unknown>): PersistedConversationToolCall
   completedAt: row.completed_at === null ? null : String(row.completed_at),
 });
 
+const toTask = (row: Record<string, unknown>): PersistedConversationTask => ({
+  conversationId: String(row.conversation_id),
+  taskId: Number(row.task_id),
+  subject: row.subject === null ? null : String(row.subject),
+  description: row.description === null ? null : String(row.description),
+  status: String(row.status) as PersistedTaskStatus,
+  owner: row.owner === null ? null : String(row.owner),
+  blockedBy: parseBlockedBy(row.blocked_by_json),
+  createdAt: String(row.created_at),
+  updatedAt: String(row.updated_at),
+});
+
 const toTaskEvent = (row: Record<string, unknown>): PersistedConversationTaskEvent => ({
   id: String(row.id),
   conversationId: String(row.conversation_id),
   taskId: Number(row.task_id),
   subject: row.subject === null ? null : String(row.subject),
   status: String(row.status),
+  sequence: Number(row.sequence),
+  updatedAt: String(row.updated_at),
+});
+
+const toBackgroundTask = (row: Record<string, unknown>): PersistedConversationBackgroundTask => ({
+  conversationId: String(row.conversation_id),
+  taskId: String(row.task_id),
+  command: row.command === null ? null : String(row.command),
+  summary: row.summary === null ? null : String(row.summary),
+  status: String(row.status) as PersistedBackgroundStatus,
+  startedAt: String(row.started_at),
+  completedAt: row.completed_at === null ? null : String(row.completed_at),
+  exitCode: row.exit_code === null ? null : Number(row.exit_code),
+});
+
+const toBackgroundEvent = (row: Record<string, unknown>): PersistedConversationBackgroundEvent => ({
+  id: String(row.id),
+  conversationId: String(row.conversation_id),
+  taskId: String(row.task_id),
+  command: row.command === null ? null : String(row.command),
+  summary: row.summary === null ? null : String(row.summary),
+  status: String(row.status) as PersistedBackgroundStatus,
   sequence: Number(row.sequence),
   updatedAt: String(row.updated_at),
 });
@@ -223,6 +306,22 @@ export async function createConversationStore(databasePath: string) {
     CREATE INDEX IF NOT EXISTS conversation_tool_calls_conversation_sequence_idx
       ON conversation_tool_calls (conversation_id, sequence ASC);
 
+    CREATE TABLE IF NOT EXISTS conversation_tasks (
+      conversation_id TEXT NOT NULL,
+      task_id INTEGER NOT NULL,
+      subject TEXT,
+      description TEXT,
+      status TEXT NOT NULL,
+      owner TEXT,
+      blocked_by_json TEXT NOT NULL DEFAULT '[]',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (conversation_id, task_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS conversation_tasks_conversation_updated_idx
+      ON conversation_tasks (conversation_id, updated_at DESC, task_id DESC);
+
     CREATE TABLE IF NOT EXISTS conversation_task_events (
       id TEXT PRIMARY KEY,
       conversation_id TEXT NOT NULL,
@@ -235,6 +334,35 @@ export async function createConversationStore(databasePath: string) {
 
     CREATE INDEX IF NOT EXISTS conversation_task_events_conversation_sequence_idx
       ON conversation_task_events (conversation_id, sequence ASC);
+
+    CREATE TABLE IF NOT EXISTS conversation_background_tasks (
+      conversation_id TEXT NOT NULL,
+      task_id TEXT NOT NULL,
+      command TEXT,
+      summary TEXT,
+      status TEXT NOT NULL,
+      started_at TEXT NOT NULL,
+      completed_at TEXT,
+      exit_code INTEGER,
+      PRIMARY KEY (conversation_id, task_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS conversation_background_tasks_conversation_started_idx
+      ON conversation_background_tasks (conversation_id, started_at ASC);
+
+    CREATE TABLE IF NOT EXISTS conversation_background_events (
+      id TEXT PRIMARY KEY,
+      conversation_id TEXT NOT NULL,
+      task_id TEXT NOT NULL,
+      command TEXT,
+      summary TEXT,
+      status TEXT NOT NULL,
+      sequence INTEGER NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS conversation_background_events_conversation_sequence_idx
+      ON conversation_background_events (conversation_id, sequence ASC);
   `);
 
   const createConversationStatement = database.prepare(`
@@ -288,6 +416,29 @@ export async function createConversationStore(databasePath: string) {
       LIMIT 1
     )
   `);
+  const upsertTaskStatement = database.prepare(`
+    INSERT INTO conversation_tasks (
+      conversation_id, task_id, subject, description, status, owner, blocked_by_json, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(conversation_id, task_id) DO UPDATE SET
+      subject = COALESCE(excluded.subject, conversation_tasks.subject),
+      description = COALESCE(excluded.description, conversation_tasks.description),
+      status = excluded.status,
+      owner = COALESCE(excluded.owner, conversation_tasks.owner),
+      blocked_by_json = excluded.blocked_by_json,
+      updated_at = excluded.updated_at
+  `);
+  const listTasksStatement = database.prepare(`
+    SELECT *
+    FROM conversation_tasks
+    WHERE conversation_id = ?
+    ORDER BY updated_at ASC, task_id ASC
+  `);
+  const getTaskStatement = database.prepare(`
+    SELECT *
+    FROM conversation_tasks
+    WHERE conversation_id = ? AND task_id = ?
+  `);
   const appendTaskEventStatement = database.prepare(`
     INSERT INTO conversation_task_events (
       id, conversation_id, task_id, subject, status, sequence, updated_at
@@ -296,6 +447,40 @@ export async function createConversationStore(databasePath: string) {
   const listTaskEventsStatement = database.prepare(`
     SELECT *
     FROM conversation_task_events
+    WHERE conversation_id = ?
+    ORDER BY sequence ASC, updated_at ASC
+  `);
+  const upsertBackgroundTaskStatement = database.prepare(`
+    INSERT INTO conversation_background_tasks (
+      conversation_id, task_id, command, summary, status, started_at, completed_at, exit_code
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(conversation_id, task_id) DO UPDATE SET
+      command = COALESCE(excluded.command, conversation_background_tasks.command),
+      summary = COALESCE(excluded.summary, conversation_background_tasks.summary),
+      status = excluded.status,
+      started_at = COALESCE(conversation_background_tasks.started_at, excluded.started_at),
+      completed_at = COALESCE(excluded.completed_at, conversation_background_tasks.completed_at),
+      exit_code = COALESCE(excluded.exit_code, conversation_background_tasks.exit_code)
+  `);
+  const listBackgroundTasksStatement = database.prepare(`
+    SELECT *
+    FROM conversation_background_tasks
+    WHERE conversation_id = ?
+    ORDER BY started_at ASC, task_id ASC
+  `);
+  const getBackgroundTaskStatement = database.prepare(`
+    SELECT *
+    FROM conversation_background_tasks
+    WHERE conversation_id = ? AND task_id = ?
+  `);
+  const appendBackgroundEventStatement = database.prepare(`
+    INSERT INTO conversation_background_events (
+      id, conversation_id, task_id, command, summary, status, sequence, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  const listBackgroundEventsStatement = database.prepare(`
+    SELECT *
+    FROM conversation_background_events
     WHERE conversation_id = ?
     ORDER BY sequence ASC, updated_at ASC
   `);
@@ -324,7 +509,14 @@ export async function createConversationStore(databasePath: string) {
       SELECT sequence FROM conversation_tool_calls WHERE conversation_id = ?
       UNION ALL
       SELECT sequence FROM conversation_task_events WHERE conversation_id = ?
+      UNION ALL
+      SELECT sequence FROM conversation_background_events WHERE conversation_id = ?
     )
+  `);
+  const nextTaskIdStatement = database.prepare(`
+    SELECT MAX(task_id) AS max_task_id
+    FROM conversation_tasks
+    WHERE conversation_id = ?
   `);
 
   return {
@@ -457,8 +649,44 @@ export async function createConversationStore(databasePath: string) {
         .map((row) => toToolCall(row as Record<string, unknown>));
     },
 
+    upsertTask(input: UpsertTaskInput): PersistedConversationTask {
+      const existingRow = getTaskStatement.get(
+        input.conversationId,
+        input.taskId,
+      ) as Record<string, unknown> | undefined;
+      const existing = existingRow ? toTask(existingRow) : null;
+      const createdAt = existing?.createdAt ?? input.createdAt ?? input.updatedAt;
+      const blockedBy = JSON.stringify(input.blockedBy ?? existing?.blockedBy ?? []);
+
+      upsertTaskStatement.run(
+        input.conversationId,
+        input.taskId,
+        input.subject ?? existing?.subject ?? null,
+        input.description ?? existing?.description ?? null,
+        input.status,
+        input.owner ?? existing?.owner ?? null,
+        blockedBy,
+        createdAt,
+        input.updatedAt,
+      );
+
+      const row = getTaskStatement.get(input.conversationId, input.taskId) as Record<string, unknown>;
+      return toTask(row);
+    },
+
+    getTask(conversationId: string, taskId: number): PersistedConversationTask | null {
+      const row = getTaskStatement.get(conversationId, taskId) as Record<string, unknown> | undefined;
+      return row ? toTask(row) : null;
+    },
+
+    listTasks(conversationId: string): PersistedConversationTask[] {
+      return listTasksStatement
+        .all(conversationId)
+        .map((row) => toTask(row as Record<string, unknown>));
+    },
+
     appendTaskEvent(input: AppendTaskEventInput): PersistedConversationTaskEvent {
-      const id = createId("task");
+      const id = createId("task_event");
       appendTaskEventStatement.run(
         id,
         input.conversationId,
@@ -486,8 +714,90 @@ export async function createConversationStore(databasePath: string) {
         .map((row) => toTaskEvent(row as Record<string, unknown>));
     },
 
+    getNextTaskId(conversationId: string): number {
+      const row = nextTaskIdStatement.get(conversationId) as { max_task_id: number | null } | undefined;
+      return (row?.max_task_id ?? 0) + 1;
+    },
+
+    upsertBackgroundTask(input: UpsertBackgroundTaskInput): PersistedConversationBackgroundTask {
+      const existingRow = getBackgroundTaskStatement.get(
+        input.conversationId,
+        input.taskId,
+      ) as Record<string, unknown> | undefined;
+      const existing = existingRow ? toBackgroundTask(existingRow) : null;
+      const startedAt = existing?.startedAt ?? input.startedAt ?? createTimestamp();
+      const completedAt = input.completedAt ?? existing?.completedAt ?? null;
+      const exitCode = input.exitCode ?? existing?.exitCode ?? null;
+
+      upsertBackgroundTaskStatement.run(
+        input.conversationId,
+        input.taskId,
+        input.command ?? existing?.command ?? null,
+        input.summary ?? existing?.summary ?? null,
+        input.status,
+        startedAt,
+        completedAt,
+        exitCode,
+      );
+
+      const row = getBackgroundTaskStatement.get(
+        input.conversationId,
+        input.taskId,
+      ) as Record<string, unknown>;
+      return toBackgroundTask(row);
+    },
+
+    getBackgroundTask(
+      conversationId: string,
+      taskId: string,
+    ): PersistedConversationBackgroundTask | null {
+      const row = getBackgroundTaskStatement.get(
+        conversationId,
+        taskId,
+      ) as Record<string, unknown> | undefined;
+      return row ? toBackgroundTask(row) : null;
+    },
+
+    listBackgroundTasks(conversationId: string): PersistedConversationBackgroundTask[] {
+      return listBackgroundTasksStatement
+        .all(conversationId)
+        .map((row) => toBackgroundTask(row as Record<string, unknown>));
+    },
+
+    appendBackgroundEvent(input: AppendBackgroundEventInput): PersistedConversationBackgroundEvent {
+      const id = createId("background_event");
+      appendBackgroundEventStatement.run(
+        id,
+        input.conversationId,
+        input.taskId,
+        input.command,
+        input.summary,
+        input.status,
+        input.sequence,
+        input.updatedAt,
+      );
+
+      return {
+        id,
+        conversationId: input.conversationId,
+        taskId: input.taskId,
+        command: input.command,
+        summary: input.summary,
+        status: input.status,
+        sequence: input.sequence,
+        updatedAt: input.updatedAt,
+      };
+    },
+
+    listBackgroundEvents(conversationId: string): PersistedConversationBackgroundEvent[] {
+      return listBackgroundEventsStatement
+        .all(conversationId)
+        .map((row) => toBackgroundEvent(row as Record<string, unknown>));
+    },
+
     getNextSequence(conversationId: string): number {
       const row = nextSequenceStatement.get(
+        conversationId,
         conversationId,
         conversationId,
         conversationId,

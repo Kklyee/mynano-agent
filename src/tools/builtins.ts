@@ -3,11 +3,9 @@ import path from "node:path";
 import { execa } from "execa";
 import type OpenAI from "openai";
 import { runSubagent } from "../services/subagent";
-import type { BackgroundManager } from "../services/background-manager";
 import type { CompactManager } from "../services/compact-manager";
 import type { SkillLoader } from "../services/skill-loader";
-import type { TaskManager } from "../services/task-manager";
-import type { Task } from "../services/types";
+import type { BackgroundManagerContract, Task, TaskManagerContract } from "../services/types";
 import type { ToolsType } from "./types";
 
 export function safePath(relativePath: string, workDir: string): string {
@@ -25,8 +23,8 @@ export interface ToolContext {
   model: string;
   getTools: () => OpenAI.Chat.Completions.ChatCompletionTool[];
   compactManager?: CompactManager;
-  taskManager?: TaskManager;
-  backgroundManager?: BackgroundManager;
+  taskManager?: TaskManagerContract;
+  backgroundManager?: BackgroundManagerContract;
 }
 
 export interface ToolDefinition {
@@ -430,3 +428,5 @@ export async function executeTool(
     return `工具执行失败：${error?.message ?? String(error)}`;
   }
 }
+
+

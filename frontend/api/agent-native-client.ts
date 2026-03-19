@@ -50,9 +50,37 @@ export type ConversationDetailPayload = {
     completedAt: string | null;
   }>;
   tasks: Array<{
+    taskId: number;
+    subject: string | null;
+    description: string | null;
+    owner: string | null;
+    blockedBy: number[];
+    status: string;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+  taskEvents: Array<{
     id: string;
     taskId: number;
     subject: string | null;
+    status: string;
+    sequence: number;
+    updatedAt: string;
+  }>;
+  backgroundTasks: Array<{
+    taskId: string;
+    command: string | null;
+    summary: string | null;
+    status: string;
+    startedAt: string;
+    completedAt: string | null;
+    exitCode: number | null;
+  }>;
+  backgroundEvents: Array<{
+    id: string;
+    taskId: string;
+    command: string | null;
+    summary: string | null;
     status: string;
     sequence: number;
     updatedAt: string;
@@ -81,7 +109,13 @@ export const createEmptyAgentStudioState = (): AgentStudioState => ({
 export const hydrateConversationState = (
   detail: ConversationDetailPayload,
 ): AgentStudioState => {
-  const messages = detail.messages
+  const messagesPayload = detail.messages ?? [];
+  const toolsPayload = detail.tools ?? [];
+  const tasksPayload = detail.tasks ?? [];
+  const taskEventsPayload = detail.taskEvents ?? [];
+  const backgroundTasksPayload = detail.backgroundTasks ?? [];
+  const backgroundEventsPayload = detail.backgroundEvents ?? [];
+  const messages = messagesPayload
     .filter(
       (
         message,
@@ -103,28 +137,53 @@ export const hydrateConversationState = (
       ) as "complete" | "running" | "incomplete",
       sequence: message.sequence,
     }));
-  const tools = detail.tools.map((tool) => ({
-    id: tool.id,
-    name: tool.name,
-    status: tool.status,
-    args: tool.argsJson ? JSON.parse(tool.argsJson) : undefined,
-    result: tool.resultText ?? undefined,
-    startedAt: tool.startedAt,
-    completedAt: tool.completedAt ?? undefined,
-    sequence: tool.sequence,
-  }));
-  const tasks = detail.tasks.map((task) => ({
+  const tools = toolsPayload
+    .filter((tool) => shouldDisplayTool(tool.name))
+    .map((tool) => ({
+      id: tool.id,
+      name: tool.name,
+      status: tool.status,
+      args: tool.argsJson ? JSON.parse(tool.argsJson) : undefined,
+      result: tool.resultText ?? undefined,
+      startedAt: tool.startedAt,
+      completedAt: tool.completedAt ?? undefined,
+      sequence: tool.sequence,
+    }));
+  const taskSequenceMap = new Map<number, number>();
+  for (const event of taskEventsPayload) {
+    taskSequenceMap.set(event.taskId, event.sequence);
+  }
+  const backgroundSequenceMap = new Map<string, number>();
+  for (const event of backgroundEventsPayload) {
+    backgroundSequenceMap.set(event.taskId, event.sequence);
+  }
+  const tasks = tasksPayload.map((task) => ({
     taskId: task.taskId,
     subject: task.subject ?? undefined,
+    description: task.description ?? undefined,
+    owner: task.owner ?? undefined,
+    blockedBy: task.blockedBy,
     status: task.status,
     updatedAt: task.updatedAt,
-    sequence: task.sequence,
+    sequence: taskSequenceMap.get(task.taskId),
+  }));
+  const backgroundTasks = backgroundTasksPayload.map((task) => ({
+    taskId: task.taskId,
+    command: task.command ?? undefined,
+    summary: task.summary ?? undefined,
+    status: task.status,
+    startedAt: task.startedAt,
+    completedAt: task.completedAt ?? undefined,
+    exitCode: task.exitCode,
+    updatedAt: task.completedAt ?? task.startedAt,
+    sequence: backgroundSequenceMap.get(task.taskId),
   }));
   const nextSequence = Math.max(
     -1,
     ...messages.map((message) => message.sequence ?? -1),
     ...tools.map((tool) => tool.sequence ?? -1),
-    ...tasks.map((task) => task.sequence ?? -1),
+    ...taskEventsPayload.map((event) => event.sequence ?? -1),
+    ...backgroundEventsPayload.map((event) => event.sequence ?? -1),
   ) + 1;
 
   return {
@@ -132,6 +191,7 @@ export const hydrateConversationState = (
     messages,
     tools,
     tasks,
+    backgroundTasks,
     session: {
       ...createEmptyAgentTransportState().session,
       threadId: detail.conversation.id,
@@ -567,3 +627,4 @@ export const consumeAgentSse = async (
     if (done) break;
   }
 };
+

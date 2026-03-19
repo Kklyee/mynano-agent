@@ -10,6 +10,7 @@ export type AgentEvent =
   | { type: "tool.completed"; sessionId: string; name: ToolsType; result: string }
   | { type: "task.created"; sessionId: string; taskId: number; subject: string }
   | { type: "task.updated"; sessionId: string; taskId: number; status: string }
+  | { type: "background.started"; sessionId: string; taskId: string; status: string }
   | { type: "background.updated"; sessionId: string; taskId: string; status: string }
   | { type: "session.completed"; sessionId: string; result: string }
   | { type: "session.failed"; sessionId: string; error: string };

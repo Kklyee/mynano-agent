@@ -1,6 +1,13 @@
-import type { BackgroundTask, Task } from "../services/types";
+import type { ConversationService } from "../services/conversation-service";
+import type {
+  BackgroundManagerContract,
+  BackgroundTask,
+  Task,
+  TaskManagerContract,
+} from "../services/types";
 import type { ToolsType } from "../tools/types";
 import type { AgentEvent } from "./events";
+import type { ToolRegistry } from "../tools/tool-registry";
 
 export type AgentStatus = "idle" | "running" | "completed" | "failed";
 
@@ -36,6 +43,7 @@ export interface CreateAgentOptions {
   llmConfig: LlmConfig;
   runtime: RuntimeConfig;
   behavior?: BehaviorConfig;
+  conversationService?: ConversationService;
 }
 
 export interface AgentRunResult {
@@ -75,6 +83,13 @@ export interface AgentSeedMessage {
 export interface CreateAgentSessionOptions {
   sessionId?: string;
   messages?: AgentSeedMessage[];
+  conversationId?: string;
+}
+
+export interface AgentSessionScope {
+  taskManager: TaskManagerContract;
+  backgroundManager: BackgroundManagerContract;
+  toolRegistry: ToolRegistry;
 }
 
 export interface AgentSession {

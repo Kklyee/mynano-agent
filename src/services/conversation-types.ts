@@ -3,6 +3,8 @@ export type PersistedConversationStatus = "idle" | "running" | "completed" | "fa
 export type PersistedMessageRole = "system" | "user" | "assistant" | "tool";
 export type PersistedMessageStatus = "streaming" | "complete" | "failed" | "partial";
 export type PersistedToolStatus = "running" | "completed";
+export type PersistedTaskStatus = "pending" | "in_progress" | "completed" | "blocked";
+export type PersistedBackgroundStatus = "running" | "completed" | "failed";
 
 export type PersistedConversation = {
   id: string;
@@ -39,6 +41,18 @@ export type PersistedConversationToolCall = {
   completedAt: string | null;
 };
 
+export type PersistedConversationTask = {
+  conversationId: string;
+  taskId: number;
+  subject: string | null;
+  description: string | null;
+  status: PersistedTaskStatus;
+  owner: string | null;
+  blockedBy: number[];
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type PersistedConversationTaskEvent = {
   id: string;
   conversationId: string;
@@ -49,11 +63,36 @@ export type PersistedConversationTaskEvent = {
   updatedAt: string;
 };
 
+export type PersistedConversationBackgroundTask = {
+  conversationId: string;
+  taskId: string;
+  command: string | null;
+  summary: string | null;
+  status: PersistedBackgroundStatus;
+  startedAt: string;
+  completedAt: string | null;
+  exitCode: number | null;
+};
+
+export type PersistedConversationBackgroundEvent = {
+  id: string;
+  conversationId: string;
+  taskId: string;
+  command: string | null;
+  summary: string | null;
+  status: PersistedBackgroundStatus;
+  sequence: number;
+  updatedAt: string;
+};
+
 export type ConversationDetail = {
   conversation: PersistedConversation;
   messages: PersistedConversationMessage[];
   tools: PersistedConversationToolCall[];
-  tasks: PersistedConversationTaskEvent[];
+  tasks: PersistedConversationTask[];
+  taskEvents: PersistedConversationTaskEvent[];
+  backgroundTasks: PersistedConversationBackgroundTask[];
+  backgroundEvents: PersistedConversationBackgroundEvent[];
 };
 
 export type ConversationListItem = PersistedConversation;

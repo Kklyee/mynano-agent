@@ -1,20 +1,23 @@
 import type OpenAI from "openai";
-import type { AgentEvent } from "./events";
 import type { Task } from "../services/types";
 import type { ToolsType } from "../tools/types";
+import { AsyncEventQueue } from "../utils/async-event-queue";
+import { ensureAssistantMessageHasVisibleOutput, extractAssistantTextDelta } from "./assistant-stream";
+import type { AgentEvent } from "./events";
+import { AgentRuntime } from "./runtime";
 import type {
-  AgentSeedMessage,
   AgentRunResult,
+  AgentSeedMessage,
   AgentSession as AgentSessionContract,
+  AgentSessionScope,
   AgentState,
   ToolLog,
 } from "./types";
-import { AgentRuntime } from "./runtime";
-import { AsyncEventQueue } from "../utils/async-event-queue";
 
 export class AgentSession implements AgentSessionContract {
   readonly id: string;
   private readonly runtime: AgentRuntime;
+  private readonly scope: AgentSessionScope;
   private state: AgentState;
   private readonly listeners = new Set<(event: AgentEvent) => void>();
   private readonly messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
@@ -22,9 +25,11 @@ export class AgentSession implements AgentSessionContract {
   constructor(
     runtime: AgentRuntime,
     sessionId: string,
+    scope: AgentSessionScope,
     seedMessages: AgentSeedMessage[] = [],
   ) {
     this.runtime = runtime;
+    this.scope = scope;
     this.id = sessionId;
     this.messages.push(...seedMessages.map((message) => this.toChatMessage(message)));
     this.state = {
@@ -57,9 +62,9 @@ export class AgentSession implements AgentSessionContract {
   private toSimpleMessages(
     msgs: OpenAI.Chat.Completions.ChatCompletionMessageParam[],
   ): Array<{ role: string; content: string }> {
-    return msgs.map((m) => ({
-      role: m.role,
-      content: typeof m.content === "string" ? m.content : "",
+    return msgs.map((message) => ({
+      role: message.role,
+      content: typeof message.content === "string" ? message.content : "",
     }));
   }
 
@@ -95,7 +100,7 @@ export class AgentSession implements AgentSessionContract {
     const unsubscribe = this.onEvent((event) => queue.push(event));
 
     void this.runAgentLoop(input)
-      .catch(() => { })
+      .catch(() => {})
       .finally(() => {
         unsubscribe();
         queue.close();
@@ -140,8 +145,6 @@ export class AgentSession implements AgentSessionContract {
       return this.failSession(error);
     }
   }
-
-
 
   private async buildSystemPrompt(): Promise<string> {
     const skillList = await this.runtime.skillLoader.renderList();
@@ -227,10 +230,10 @@ export class AgentSession implements AgentSessionContract {
   private async injectBackgroundNotifications(): Promise<void> {
     if (!this.runtime.shouldUseBackground()) return;
 
-    const notifications = this.runtime.backgroundManager.drainNotifications();
+    const notifications = this.scope.backgroundManager.drainNotifications();
     if (notifications.length === 0) return;
 
-    const content = ["Background task notifications:", ...notifications.map((n) => n.message)].join(
+    const content = ["Background task notifications:", ...notifications.map((item) => item.message)].join(
       "\n\n",
     );
     this.messages.push({ role: "system", content });
@@ -248,7 +251,7 @@ export class AgentSession implements AgentSessionContract {
   private async callLLM(): Promise<OpenAI.Chat.Completions.ChatCompletionMessage> {
     const stream = this.runtime.openai.createChatCompletionStream({
       messages: this.messages,
-      tools: this.runtime.toolRegistry.getDefinitions(),
+      tools: this.scope.toolRegistry.getDefinitions(),
       temperature: this.runtime.openai.temperature,
       tool_choice: "auto",
     });
@@ -262,7 +265,6 @@ export class AgentSession implements AgentSessionContract {
       const delta = chunk.choices[0]?.delta;
       if (!delta) continue;
 
-      // 处理内容增量
       if (delta.content) {
         content += delta.content;
         this.emit({
@@ -272,26 +274,25 @@ export class AgentSession implements AgentSessionContract {
         });
       }
 
-      // 处理工具调用增量
       if (delta.tool_calls) {
-        for (const tc of delta.tool_calls) {
-          const index = tc.index ?? 0;
+        for (const toolCall of delta.tool_calls) {
+          const index = toolCall.index ?? 0;
           if (!toolCalls[index]) {
             toolCalls[index] = {
-              id: tc.id ?? ``,
+              id: toolCall.id ?? "",
               type: "function",
               function: { name: "", arguments: "" },
             } as OpenAI.Chat.Completions.ChatCompletionMessageToolCall;
           }
-          const fn = tc.function;
+          const fn = toolCall.function;
           if (fn?.name) {
             (toolCalls[index] as any).function.name += fn.name;
           }
           if (fn?.arguments) {
             (toolCalls[index] as any).function.arguments += fn.arguments;
           }
-          if (tc.id) {
-            toolCalls[index].id = tc.id;
+          if (toolCall.id) {
+            toolCalls[index].id = toolCall.id;
           }
         }
       }
@@ -299,14 +300,12 @@ export class AgentSession implements AgentSessionContract {
 
     this.emit({ type: "assistant.stream.completed", sessionId: this.id, content });
 
-    const message = {
-      role: "assistant" as const,
+    return {
+      role: "assistant",
       content,
       tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
       refusal: null,
-    };
-
-    return message as OpenAI.Chat.Completions.ChatCompletionMessage;
+    } as OpenAI.Chat.Completions.ChatCompletionMessage;
   }
 
   private async handleAssistantResponse(
@@ -335,7 +334,6 @@ export class AgentSession implements AgentSessionContract {
   private async executeSingleToolCall(
     call: OpenAI.Chat.Completions.ChatCompletionMessageToolCall,
   ): Promise<void> {
-    // 调试：查看工具调用的完整结构
     console.log(`[${this.id}] Raw tool call:`, JSON.stringify(call, null, 2));
 
     const fnCall = (call as any).function;
@@ -392,7 +390,7 @@ export class AgentSession implements AgentSessionContract {
     }
 
     try {
-      return await this.runtime.toolRegistry.execute(toolName as ToolsType, args);
+      return await this.scope.toolRegistry.execute(toolName as ToolsType, args);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error(`[${this.id}] Tool execution failed: ${toolName}`, message);
@@ -421,8 +419,8 @@ export class AgentSession implements AgentSessionContract {
   }
 
   private async refreshTaskState(): Promise<void> {
-    const previousTasks = new Map<number, Task>(this.state.tasks.map((t) => [t.id, t]));
-    const nextTasks = await this.runtime.taskManager.listAll();
+    const previousTasks = new Map<number, Task>(this.state.tasks.map((task) => [task.id, task]));
+    const nextTasks = await this.scope.taskManager.listAll();
 
     for (const task of nextTasks) {
       const previous = previousTasks.get(task.id);
@@ -447,6 +445,31 @@ export class AgentSession implements AgentSessionContract {
   }
 
   private refreshBackgroundState(): void {
-    this.state.backgroundTasks = this.runtime.backgroundManager.list();
+    const previousTasks = new Map(
+      this.state.backgroundTasks.map((task) => [task.id, task]),
+    );
+    const nextTasks = this.scope.backgroundManager.list();
+
+    for (const task of nextTasks) {
+      const previous = previousTasks.get(task.id);
+      if (!previous) {
+        this.emit({
+          type: "background.started",
+          sessionId: this.id,
+          taskId: task.id,
+          status: task.status,
+        });
+      } else if (previous.status !== task.status) {
+        this.emit({
+          type: "background.updated",
+          sessionId: this.id,
+          taskId: task.id,
+          status: task.status,
+        });
+      }
+    }
+
+    this.state.backgroundTasks = nextTasks;
   }
 }
+
