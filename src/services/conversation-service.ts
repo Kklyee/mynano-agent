@@ -108,6 +108,11 @@ export class ConversationService {
     return this.store.listConversations(userId);
   }
 
+  deleteConversation(input: GetConversationInput): void {
+    this.requireOwnedConversation(input);
+    this.store.deleteConversation(input.conversationId);
+  }
+
   getConversationDetail(input: GetConversationInput): ConversationDetail {
     const conversation = this.requireOwnedConversation(input);
 

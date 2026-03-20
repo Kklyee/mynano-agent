@@ -34,6 +34,22 @@ export interface ToolDefinition {
   handler: (args: any, ctx: ToolContext) => Promise<string>;
 }
 
+function formatSearchResult(result: Record<string, unknown>, index: number): string {
+  const title = String(result.title ?? "Untitled");
+  const url = String(result.url ?? "");
+  const content = String(result.content ?? "").trim();
+  const score = typeof result.score === "number" ? `score=${result.score}` : null;
+
+  return [
+    `${index + 1}. ${title}`,
+    url ? `URL: ${url}` : null,
+    score ? `Meta: ${score}` : null,
+    content ? `Snippet: ${content}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 const toolDefinitions: ToolDefinition[] = [
   {
     name: "bash",
@@ -55,6 +71,81 @@ const toolDefinitions: ToolDefinition[] = [
         reject: false,
       });
       return [stdout, stderr].filter(Boolean).join("\n").slice(0, 50000);
+    },
+  },
+  {
+    name: "web_search",
+    description: "使用 Tavily 进行联网搜索，适合查询最新信息、外部资料和网页来源",
+    parameters: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "搜索关键词或问题",
+        },
+        topic: {
+          type: "string",
+          enum: ["general", "news"],
+          description: "搜索主题，普通网页用 general，新闻资讯用 news",
+        },
+        max_results: {
+          type: "number",
+          description: "返回结果数量，默认 5，最大 10",
+        },
+      },
+      required: ["query"],
+    },
+    handler: async ({ query, topic, max_results }) => {
+      const apiKey = process.env.TAVILY_API_KEY?.trim();
+      if (!apiKey) {
+        return "未配置 TAVILY_API_KEY，无法执行联网搜索";
+      }
+
+      const searchQuery = String(query ?? "").trim();
+      if (!searchQuery) {
+        return "搜索失败，query 不能为空";
+      }
+
+      const response = await fetch("https://api.tavily.com/search", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          api_key: apiKey,
+          query: searchQuery,
+          topic: topic === "news" ? "news" : "general",
+          search_depth: "advanced",
+          max_results: Math.min(Math.max(Number(max_results) || 5, 1), 10),
+          include_answer: true,
+          include_raw_content: false,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Tavily 请求失败 (${response.status}): ${errorText}`);
+      }
+
+      const data = (await response.json()) as {
+        answer?: string;
+        query?: string;
+        results?: Array<Record<string, unknown>>;
+      };
+
+      const results = Array.isArray(data.results) ? data.results : [];
+      if (results.length === 0) {
+        return `搜索关键词: ${searchQuery}\n未找到结果`;
+      }
+
+      return [
+        `搜索关键词: ${String(data.query ?? searchQuery)}`,
+        data.answer ? `摘要: ${data.answer}` : null,
+        "结果:",
+        results.map((item, index) => formatSearchResult(item, index)).join("\n\n"),
+      ]
+        .filter(Boolean)
+        .join("\n");
     },
   },
   {
@@ -428,5 +519,4 @@ export async function executeTool(
     return `工具执行失败：${error?.message ?? String(error)}`;
   }
 }
-
 

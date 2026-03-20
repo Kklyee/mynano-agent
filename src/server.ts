@@ -54,7 +54,7 @@ app.use(
 
       return allowedOrigins.includes(origin) ? origin : "";
     },
-    allowMethods: ["POST", "GET", "OPTIONS"],
+    allowMethods: ["POST", "GET", "DELETE", "OPTIONS"],
     allowHeaders: ["Content-Type", "Authorization"],
     credentials: true,
   }),
@@ -121,6 +121,18 @@ app.post("/api/conversations", requireAuth, async (c) => {
   });
 
   return c.json({ conversation });
+});
+
+app.delete("/api/conversations/:id", requireAuth, (c) => {
+  const user = c.get("user");
+  const conversationId = c.req.param("id");
+
+  try {
+    conversationService.deleteConversation({ userId: user.id, conversationId });
+    return c.json({ success: true });
+  } catch {
+    return c.json({ error: "Conversation not found" }, 404);
+  }
 });
 
 app.get("/api/conversations/:id", requireAuth, (c) => {

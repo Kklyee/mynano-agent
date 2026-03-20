@@ -26,7 +26,12 @@ export function useChat() {
   const [conversations, setConversations] = useState<ConversationListItem[]>([]);
   const [isConversationListLoading, setIsConversationListLoading] = useState(true);
   const abortRef = useRef<AbortController | null>(null);
+  const stateRef = useRef(state);
   const apiBaseUrl = getAgentApiBaseUrl();
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   const loadConversationList = async () => {
     setIsConversationListLoading(true);
@@ -44,7 +49,7 @@ export function useChat() {
       };
       setConversations(payload.conversations);
 
-      if (!state.session.threadId && payload.conversations[0]?.id) {
+      if (!stateRef.current.session.threadId && payload.conversations[0]?.id) {
         const detail = await fetchConversationDetail(payload.conversations[0].id);
         setState(hydrateConversationState(detail));
       }
@@ -80,20 +85,35 @@ export function useChat() {
     const payload = (await response.json()) as {
       conversation: ConversationListItem;
     };
-    setConversations((current) => [payload.conversation, ...current]);
-    setState((current) => ({
-      ...createEmptyAgentStudioState(),
-      session: {
-        ...createEmptyAgentStudioState().session,
-        threadId: payload.conversation.id,
-      },
-    }));
     return payload.conversation;
   };
 
   const selectConversation = async (conversationId: string) => {
     const detail = await fetchConversationDetail(conversationId);
     setState(hydrateConversationState(detail));
+  };
+
+  const deleteConversation = async (conversationId: string) => {
+    const response = await fetch(`${apiBaseUrl}/api/conversations/${conversationId}`, {
+      method: "DELETE",
+      credentials: "include",
+    });
+    if (!response.ok) {
+      throw new Error(`Delete conversation failed with status ${response.status}`);
+    }
+
+    const remainingConversations = conversations.filter((c) => c.id !== conversationId);
+    setConversations(remainingConversations);
+
+    if (stateRef.current.session.threadId === conversationId) {
+      const nextConversationId = remainingConversations[0]?.id;
+      if (nextConversationId) {
+        const detail = await fetchConversationDetail(nextConversationId);
+        setState(hydrateConversationState(detail));
+      } else {
+        setState(createEmptyAgentStudioState());
+      }
+    }
   };
 
   useEffect(() => {
@@ -203,7 +223,7 @@ export function useChat() {
   const resetWorkspace = () => {
     abortRef.current?.abort();
     abortRef.current = null;
-    void createConversation();
+    setState(createEmptyAgentStudioState());
   };
 
   const isRunning =
@@ -215,6 +235,7 @@ export function useChat() {
     healthQuery,
     conversations,
     createConversation,
+    deleteConversation,
     isRunning,
     isConversationListLoading,
     resetWorkspace,

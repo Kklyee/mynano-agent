@@ -58,6 +58,7 @@ export function AgentStudio({
     apiBaseUrl,
     cancelRun,
     conversations,
+    deleteConversation,
     healthQuery,
     isConversationListLoading,
     isRunning,
@@ -113,6 +114,7 @@ export function AgentStudio({
           currentThreadId={state.session.threadId}
           health={getHealthStatus()}
           isConversationListLoading={isConversationListLoading}
+          onDeleteConversation={(id) => void deleteConversation(id)}
           onNewConversation={resetWorkspace}
           onSelectConversation={(id) => void selectConversation(id)}
           onSetIsProfileOpen={setIsProfileOpen}
@@ -148,7 +150,7 @@ export function AgentStudio({
                     <SheetTitle>对话历史</SheetTitle>
                   </SheetHeader>
                   <Separator />
-                  <div className="p-2">
+                  <div className="border-b p-2">
                     <Button
                       variant="ghost"
                       className="w-full justify-start gap-2"
@@ -158,6 +160,42 @@ export function AgentStudio({
                       新对话
                     </Button>
                   </div>
+                  <ScrollArea className="h-[calc(100vh-5.5rem)] p-2">
+                    {conversations.length > 0 ? (
+                      <div className="space-y-1">
+                        {conversations.map((conversation) => (
+                          <Button
+                            key={conversation.id}
+                            variant={
+                              state.session.threadId === conversation.id ? "secondary" : "ghost"
+                            }
+                            className="h-auto w-full justify-start rounded-xl px-3 py-2 text-left"
+                            onClick={() => void selectConversation(conversation.id)}
+                          >
+                            <div className="min-w-0 flex-1 overflow-hidden">
+                              <div className="truncate text-sm font-medium leading-5">
+                                {conversation.title}
+                              </div>
+                              <div className="truncate text-[11px] leading-4 text-muted-foreground">
+                                {conversation.lastMessageAt
+                                  ? new Date(conversation.lastMessageAt).toLocaleString("zh-CN", {
+                                      month: "numeric",
+                                      day: "numeric",
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    })
+                                  : "暂无消息"}
+                              </div>
+                            </div>
+                          </Button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="px-3 py-8 text-center text-xs text-muted-foreground">
+                        暂无历史对话
+                      </div>
+                    )}
+                  </ScrollArea>
                 </SheetContent>
               </Sheet>
               <h1 className="text-sm font-semibold">Agent Studio</h1>

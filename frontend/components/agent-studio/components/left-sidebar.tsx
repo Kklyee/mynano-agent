@@ -1,9 +1,16 @@
 "use client";
 
-import { PanelLeftCloseIcon, PlusIcon, Settings2Icon, UserIcon } from "lucide-react";
+import { MoreHorizontalIcon, PanelLeftCloseIcon, PlusIcon, Settings2Icon, Trash2Icon, UserIcon } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
 import { getUserInitials } from "@/utils/user-utils";
 
 type Conversation = {
@@ -22,6 +29,7 @@ export function LeftSidebar({
   currentThreadId,
   health,
   isConversationListLoading,
+  onDeleteConversation,
   onNewConversation,
   onSelectConversation,
   onSetIsProfileOpen,
@@ -34,6 +42,7 @@ export function LeftSidebar({
   currentThreadId?: string | null;
   health: HealthStatus;
   isConversationListLoading: boolean;
+  onDeleteConversation: (id: string) => void;
   onNewConversation: () => void;
   onSelectConversation: (id: string) => void;
   onSetIsProfileOpen: (open: boolean) => void;
@@ -44,9 +53,8 @@ export function LeftSidebar({
 }) {
   return (
     <aside
-      className={`hidden flex-col border-r bg-card transition-all duration-300 lg:flex ${
-        open ? "w-[260px]" : "w-0 overflow-hidden opacity-0"
-      }`}
+      className={`hidden flex-col border-r bg-card transition-all duration-300 lg:flex ${open ? "w-[260px]" : "w-0 overflow-hidden opacity-0"
+        }`}
     >
       {/* Sidebar Header */}
       <div className="flex items-center justify-between gap-2 border-b p-3">
@@ -76,30 +84,75 @@ export function LeftSidebar({
           </div>
         ) : conversations.length > 0 ? (
           <div className="space-y-1">
-            {conversations.map((conversation) => (
-              <Button
-                key={conversation.id}
-                variant={currentThreadId === conversation.id ? "secondary" : "ghost"}
-                className="h-auto w-full justify-start rounded-2xl px-3 py-3 text-left"
-                onClick={() => onSelectConversation(conversation.id)}
-              >
-                <div className="min-w-0 flex-1 space-y-0.5 overflow-hidden">
-                  <div className="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium leading-snug">
-                    {conversation.title}
-                  </div>
-                  <div className="truncate text-xs text-muted-foreground">
-                    {conversation.lastMessageAt
-                      ? new Date(conversation.lastMessageAt).toLocaleString("zh-CN", {
-                          month: "numeric",
-                          day: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })
-                      : "暂无消息"}
-                  </div>
+            {conversations.map((conversation) => {
+              const isActive = currentThreadId === conversation.id;
+              return (
+                <div
+                  key={conversation.id}
+                  className={cn(
+                    "group flex items-center gap-1 rounded-xl pr-1 transition-colors",
+                    isActive ? "bg-secondary text-secondary-foreground" : "hover:bg-muted",
+                  )}
+                >
+                  <Button
+                    variant="ghost"
+                    className="h-auto min-w-0 flex-1 justify-start rounded-xl bg-transparent px-3 py-2 text-left hover:bg-transparent"
+                    onClick={() => onSelectConversation(conversation.id)}
+                  >
+                    <div className="min-w-0 flex-1 overflow-hidden">
+                      <div className="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium leading-5">
+                        {conversation.title}
+                      </div>
+                      <div
+                        className={cn(
+                          "truncate text-[11px] leading-4",
+                          isActive ? "text-secondary-foreground/70" : "text-muted-foreground",
+                        )}
+                      >
+                        {conversation.lastMessageAt
+                          ? new Date(conversation.lastMessageAt).toLocaleString("zh-CN", {
+                              month: "numeric",
+                              day: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })
+                          : "暂无消息"}
+                      </div>
+                    </div>
+                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        aria-label={`${conversation.title} 操作`}
+                        variant="ghost"
+                        size="icon-xs"
+                        className={cn(
+                          "shrink-0 rounded-lg opacity-0 transition-opacity hover:bg-background/60 data-[state=open]:opacity-100",
+                          isActive
+                            ? "text-secondary-foreground/70 hover:text-secondary-foreground"
+                            : "text-muted-foreground group-hover:opacity-100",
+                        )}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <MoreHorizontalIcon className="h-3.5 w-3.5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-32">
+                      <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteConversation(conversation.id);
+                        }}
+                      >
+                        <Trash2Icon className="mr-2 h-3.5 w-3.5" />
+                        删除
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
-              </Button>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <div className="px-3 py-8 text-center text-xs text-muted-foreground">
@@ -112,13 +165,12 @@ export function LeftSidebar({
       <div className="space-y-3 border-t p-3">
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <span
-            className={`h-2 w-2 rounded-full ${
-              health.variant === "default"
-                ? "bg-green-500"
-                : health.variant === "destructive"
-                  ? "bg-red-500"
-                  : "bg-yellow-500"
-            }`}
+            className={`h-2 w-2 rounded-full ${health.variant === "default"
+              ? "bg-green-500"
+              : health.variant === "destructive"
+                ? "bg-red-500"
+                : "bg-yellow-500"
+              }`}
           />
           <span>Backend {health.label}</span>
         </div>

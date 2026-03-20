@@ -66,7 +66,10 @@ npm install
 ZHIPU_API_KEY=...
 ZHIPU_BASE_URL=...
 ZHIPU_MODEL=GLM-4.7
+TAVILY_API_KEY=...
 ```
+
+`TAVILY_API_KEY` 用于启用 agent 的联网搜索工具 `web_search`。当任务需要最新网页信息、新闻或外部资料来源时，agent 会通过 Tavily 搜索并返回摘要与结果链接。
 
 启动后端服务：
 

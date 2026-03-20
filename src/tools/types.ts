@@ -1,5 +1,6 @@
 export type ToolsType =
   | "bash"
+  | "web_search"
   | "read_file"
   | "edit_file"
   | "write_file"

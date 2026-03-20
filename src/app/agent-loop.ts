@@ -13,7 +13,8 @@ const researchSystemPrompt =
   1. 多步骤任务优先使用 task_create / task_update / task_list
   2. 需要专门规则时优先 load_skill
   3. 需要耗时任务时优先 background_run
-  4. 输出时尽量基于已执行的任务和已得到的证据
+  4. 需要最新外部信息、新闻、资料来源时优先使用 web_search
+  5. 输出时尽量基于已执行的任务和已得到的证据
 `;
 
 export async function agentLoop(prompt: string): Promise<string> {

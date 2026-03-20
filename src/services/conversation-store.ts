@@ -381,6 +381,16 @@ export async function createConversationStore(databasePath: string) {
     SELECT *
     FROM conversations
     WHERE user_id = ?
+      AND EXISTS (
+        SELECT 1
+        FROM conversation_messages
+        WHERE conversation_id = conversations.id AND role = 'user'
+      )
+      AND EXISTS (
+        SELECT 1
+        FROM conversation_messages
+        WHERE conversation_id = conversations.id AND role = 'assistant'
+      )
     ORDER BY updated_at DESC, created_at DESC
   `);
   const appendMessageStatement = database.prepare(`
@@ -500,6 +510,27 @@ export async function createConversationStore(databasePath: string) {
     UPDATE conversations
     SET status = ?, updated_at = ?
     WHERE id = ?
+  `);
+  const deleteConversationStatement = database.prepare(`
+    DELETE FROM conversations WHERE id = ?
+  `);
+  const deleteConversationMessagesStatement = database.prepare(`
+    DELETE FROM conversation_messages WHERE conversation_id = ?
+  `);
+  const deleteConversationToolCallsStatement = database.prepare(`
+    DELETE FROM conversation_tool_calls WHERE conversation_id = ?
+  `);
+  const deleteConversationTasksStatement = database.prepare(`
+    DELETE FROM conversation_tasks WHERE conversation_id = ?
+  `);
+  const deleteConversationTaskEventsStatement = database.prepare(`
+    DELETE FROM conversation_task_events WHERE conversation_id = ?
+  `);
+  const deleteConversationBackgroundTasksStatement = database.prepare(`
+    DELETE FROM conversation_background_tasks WHERE conversation_id = ?
+  `);
+  const deleteConversationBackgroundEventsStatement = database.prepare(`
+    DELETE FROM conversation_background_events WHERE conversation_id = ?
   `);
   const nextSequenceStatement = database.prepare(`
     SELECT MAX(sequence) AS max_sequence
@@ -819,6 +850,16 @@ export async function createConversationStore(databasePath: string) {
         createTimestamp(),
         conversationId,
       );
+    },
+
+    deleteConversation(conversationId: string): void {
+      deleteConversationBackgroundEventsStatement.run(conversationId);
+      deleteConversationBackgroundTasksStatement.run(conversationId);
+      deleteConversationTaskEventsStatement.run(conversationId);
+      deleteConversationTasksStatement.run(conversationId);
+      deleteConversationToolCallsStatement.run(conversationId);
+      deleteConversationMessagesStatement.run(conversationId);
+      deleteConversationStatement.run(conversationId);
     },
 
     close() {
