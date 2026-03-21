@@ -193,6 +193,7 @@ export class ConversationService {
       updatedAt: now,
       lastMessageAt: now,
       messageCountDelta: 1,
+      newTitle: input.content.trim().slice(0, 60),
     })
     const msg: PersistedConversationMessage = {
       id,
