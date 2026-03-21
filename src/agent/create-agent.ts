@@ -14,7 +14,7 @@ function createSessionId(): string {
 export async function createAgent(
   options: CreateAgentOptions,
 ): Promise<Agent> {
-  const runtime = new AgentRuntime(options);
+  const runtime = new AgentRuntime(options, options.conversationService);
   return {
     async run(input: string): Promise<AgentRunResult> {
       const scope = runtime.createSessionScope();
