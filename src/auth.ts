@@ -1,6 +1,7 @@
 import { betterAuth } from "better-auth"
 import { drizzleAdapter } from "better-auth/adapters/drizzle"
 import { db } from "./db/index.js"
+import { account, session, user, verification } from "./db/schema/auth.js"
 
 const DEFAULT_AUTH_SECRET = "mini-agent-better-auth-development-secret-please-change"
 const LOCAL_DEV_ORIGIN_PATTERN = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/
@@ -24,7 +25,10 @@ export const auth = betterAuth({
   secret: process.env.BETTER_AUTH_SECRET ?? DEFAULT_AUTH_SECRET,
   baseURL: getAuthBaseUrl(),
   basePath: "/api/auth",
-  database: drizzleAdapter(db, { provider: "pg" }),
+  database: drizzleAdapter(db, {
+    provider: "pg",
+    schema: { user, session, account, verification },
+  }),
   trustedOrigins: async (request) => {
     const configured = getConfiguredTrustedOrigins()
     const requestOrigin = request?.headers.get("origin")
