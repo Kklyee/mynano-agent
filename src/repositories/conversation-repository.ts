@@ -155,14 +155,20 @@ export class ConversationRepository {
         updatedAt: opts.updatedAt,
         lastMessageAt: opts.lastMessageAt,
         messageCount: sql`${conversations.messageCount} + ${opts.messageCountDelta}`,
-        title: sql`CASE
-          WHEN (${conversations.title} = 'New Conversation' OR ${conversations.title} = '')
-            AND ${opts.newTitle ?? ""} != ''
-          THEN ${opts.newTitle ?? ""}
-          ELSE ${conversations.title}
-        END`,
       })
       .where(eq(conversations.id, id))
+
+    if (opts.newTitle?.trim()) {
+      await this.db
+        .update(conversations)
+        .set({ title: opts.newTitle.trim() })
+        .where(
+          and(
+            eq(conversations.id, id),
+            sql`${conversations.title} IN ('New Conversation', '')`,
+          ),
+        )
+    }
   }
 
   async updateConversationStatus(id: string, status: string): Promise<void> {
