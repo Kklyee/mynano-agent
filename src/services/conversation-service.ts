@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto"
+import type { ConversationRepository } from "../repositories/conversation-repository.js"
 import type {
   ConversationDetail,
   PersistedBackgroundStatus,
@@ -9,291 +11,346 @@ import type {
   PersistedMessageStatus,
   PersistedTaskStatus,
   PreparedConversationRun,
-} from "./conversation-types";
-import type { ConversationStore } from "./conversation-store";
+} from "../types/conversation.js"
 
 type CreateConversationInput = {
-  userId: string;
-  title?: string;
-};
+  userId: string
+  title?: string
+}
 
 type GetConversationInput = {
-  userId: string;
-  conversationId: string;
-};
+  userId: string
+  conversationId: string
+}
 
 type RecordMessageInput = {
-  conversationId: string;
-  content: string;
-};
+  conversationId: string
+  content: string
+}
 
 type RecordAssistantMessageInput = RecordMessageInput & {
-  status: PersistedMessageStatus;
-};
+  status: PersistedMessageStatus
+}
 
 type RecordToolCallStartedInput = {
-  conversationId: string;
-  messageId: string;
-  name: string;
-  args: unknown;
-};
+  conversationId: string
+  messageId: string
+  name: string
+  args: unknown
+}
 
 type RecordToolCallCompletedInput = {
-  conversationId: string;
-  name: string;
-  result: string;
-};
+  conversationId: string
+  name: string
+  result: string
+}
 
 type UpsertTaskInput = {
-  conversationId: string;
-  taskId: number;
-  subject?: string;
-  description?: string;
-  status: PersistedTaskStatus;
-  owner?: string;
-  blockedBy?: number[];
-};
+  conversationId: string
+  taskId: number
+  subject?: string
+  description?: string
+  status: PersistedTaskStatus
+  owner?: string
+  blockedBy?: number[]
+}
 
 type RecordTaskEventInput = {
-  conversationId: string;
-  taskId: number;
-  subject?: string;
-  status: string;
-};
+  conversationId: string
+  taskId: number
+  subject?: string
+  status: string
+}
 
 type UpsertBackgroundTaskInput = {
-  conversationId: string;
-  taskId: string;
-  command?: string;
-  summary?: string;
-  status: PersistedBackgroundStatus;
-  completedAt?: string | null;
-  exitCode?: number | null;
-};
+  conversationId: string
+  taskId: string
+  command?: string
+  summary?: string
+  status: PersistedBackgroundStatus
+  completedAt?: string | null
+  exitCode?: number | null
+}
 
 type RecordBackgroundEventInput = {
-  conversationId: string;
-  taskId: string;
-  command?: string;
-  summary?: string;
-  status: PersistedBackgroundStatus;
-};
+  conversationId: string
+  taskId: string
+  command?: string
+  summary?: string
+  status: PersistedBackgroundStatus
+}
 
 type PrepareRunInput = GetConversationInput & {
-  prompt: string;
-};
+  prompt: string
+}
 
 export class ConversationService {
-  constructor(private readonly store: ConversationStore) {}
+  constructor(private readonly repo: ConversationRepository) {}
 
-  close() {
-    this.store.close();
-  }
-
-  updateConversationStatus(
+  async updateConversationStatus(
     conversationId: string,
     status: PersistedConversationStatus,
-  ) {
-    this.store.updateConversationStatus(conversationId, status);
+  ): Promise<void> {
+    await this.repo.updateConversationStatus(conversationId, status)
   }
 
-  createConversation(input: CreateConversationInput): PersistedConversation {
-    return this.store.createConversation({
+  async createConversation(input: CreateConversationInput): Promise<PersistedConversation> {
+    const now = new Date().toISOString()
+    const id = randomUUID()
+    await this.repo.createConversation({
+      id,
       userId: input.userId,
       title: input.title?.trim() || "New Conversation",
-    });
+      status: "idle",
+      createdAt: now,
+      updatedAt: now,
+    })
+    const created = await this.repo.getConversation(id)
+    if (!created) throw new Error("Failed to create conversation")
+    return created
   }
 
-  listConversations(userId: string): PersistedConversation[] {
-    return this.store.listConversations(userId);
+  async listConversations(userId: string): Promise<PersistedConversation[]> {
+    return this.repo.listConversations(userId)
   }
 
-  deleteConversation(input: GetConversationInput): void {
-    this.requireOwnedConversation(input);
-    this.store.deleteConversation(input.conversationId);
+  async deleteConversation(input: GetConversationInput): Promise<void> {
+    await this.requireOwnedConversation(input)
+    await this.repo.deleteConversation(input.conversationId)
   }
 
-  getConversationDetail(input: GetConversationInput): ConversationDetail {
-    const conversation = this.requireOwnedConversation(input);
-
-    return {
-      conversation,
-      messages: this.store.listMessages(conversation.id),
-      tools: this.store.listToolCalls(conversation.id),
-      tasks: this.store.listTasks(conversation.id),
-      taskEvents: this.store.listTaskEvents(conversation.id),
-      backgroundTasks: this.store.listBackgroundTasks(conversation.id),
-      backgroundEvents: this.store.listBackgroundEvents(conversation.id),
-    };
+  async getConversationDetail(input: GetConversationInput): Promise<ConversationDetail> {
+    const conversation = await this.requireOwnedConversation(input)
+    const [messages, tools, tasks, taskEvents, backgroundTasks, backgroundEvents] =
+      await Promise.all([
+        this.repo.listMessages(conversation.id),
+        this.repo.listToolCalls(conversation.id),
+        this.repo.listTasks(conversation.id),
+        this.repo.listTaskEvents(conversation.id),
+        this.repo.listBackgroundTasks(conversation.id),
+        this.repo.listBackgroundEvents(conversation.id),
+      ])
+    return { conversation, messages, tools, tasks, taskEvents, backgroundTasks, backgroundEvents }
   }
 
-  prepareRun(input: PrepareRunInput): PreparedConversationRun {
-    const conversation = this.requireOwnedConversation(input);
-    const messages = this.store.listMessages(conversation.id);
-
+  async prepareRun(input: PrepareRunInput): Promise<PreparedConversationRun> {
+    const conversation = await this.requireOwnedConversation(input)
+    const messages = await this.repo.listMessages(conversation.id)
+    const nextSequence = await this.repo.getNextSequence(conversation.id)
     return {
       conversation,
       history: messages
-        .filter((message) => message.role !== "tool")
-        .map((message) => ({
-          role: message.role,
-          content: message.content,
-        })),
-      nextSequence: this.store.getNextSequence(conversation.id),
-    };
+        .filter((m) => m.role !== "tool")
+        .map((m) => ({ role: m.role, content: m.content })),
+      nextSequence,
+    }
   }
 
-  getNextTaskId(conversationId: string): number {
-    return this.store.getNextTaskId(conversationId);
+  async getNextTaskId(conversationId: string): Promise<number> {
+    return this.repo.getNextTaskId(conversationId)
   }
 
-  getTask(conversationId: string, taskId: number): PersistedConversationTask | null {
-    return this.store.getTask(conversationId, taskId);
+  async getTask(
+    conversationId: string,
+    taskId: number,
+  ): Promise<PersistedConversationTask | null> {
+    return this.repo.getTask(conversationId, taskId)
   }
 
-  listTasks(conversationId: string): PersistedConversationTask[] {
-    return this.store.listTasks(conversationId);
+  async listTasks(conversationId: string): Promise<PersistedConversationTask[]> {
+    return this.repo.listTasks(conversationId)
   }
 
-  getBackgroundTask(
+  async getBackgroundTask(
     conversationId: string,
     taskId: string,
-  ): PersistedConversationBackgroundTask | null {
-    return this.store.getBackgroundTask(conversationId, taskId);
+  ): Promise<PersistedConversationBackgroundTask | null> {
+    return this.repo.getBackgroundTask(conversationId, taskId)
   }
 
-  listBackgroundTasks(conversationId: string): PersistedConversationBackgroundTask[] {
-    return this.store.listBackgroundTasks(conversationId);
+  async listBackgroundTasks(
+    conversationId: string,
+  ): Promise<PersistedConversationBackgroundTask[]> {
+    return this.repo.listBackgroundTasks(conversationId)
   }
 
-  recordUserMessage(input: RecordMessageInput): PersistedConversationMessage {
-    return this.store.appendMessage({
+  async recordUserMessage(
+    input: RecordMessageInput,
+  ): Promise<PersistedConversationMessage> {
+    const now = new Date().toISOString()
+    const sequence = await this.repo.getNextSequence(input.conversationId)
+    const id = randomUUID()
+    await this.repo.appendMessage({
+      id,
       conversationId: input.conversationId,
       role: "user",
       content: input.content,
-      sequence: this.store.getNextSequence(input.conversationId),
+      sequence,
       status: "complete",
-    });
+      createdAt: now,
+    })
+    await this.repo.touchConversation(input.conversationId, {
+      updatedAt: now,
+      lastMessageAt: now,
+      messageCountDelta: 1,
+    })
+    const msg: PersistedConversationMessage = {
+      id,
+      conversationId: input.conversationId,
+      role: "user",
+      content: input.content,
+      sequence,
+      status: "complete",
+      createdAt: now,
+    }
+    return msg
   }
 
-  recordAssistantMessage(
+  async recordAssistantMessage(
     input: RecordAssistantMessageInput,
-  ): PersistedConversationMessage {
-    return this.store.appendMessage({
+  ): Promise<PersistedConversationMessage> {
+    const now = new Date().toISOString()
+    const sequence = await this.repo.getNextSequence(input.conversationId)
+    const id = randomUUID()
+    await this.repo.appendMessage({
+      id,
       conversationId: input.conversationId,
       role: "assistant",
       content: input.content,
-      sequence: this.store.getNextSequence(input.conversationId),
+      sequence,
       status: input.status,
-    });
+      createdAt: now,
+    })
+    const msg: PersistedConversationMessage = {
+      id,
+      conversationId: input.conversationId,
+      role: "assistant",
+      content: input.content,
+      sequence,
+      status: input.status,
+      createdAt: now,
+    }
+    return msg
   }
 
-  recordToolCallStarted(input: RecordToolCallStartedInput) {
-    const sequence = this.store.getNextSequence(input.conversationId);
-    return this.store.appendToolCall({
+  async recordToolCallStarted(input: RecordToolCallStartedInput): Promise<{ id: string }> {
+    const sequence = await this.repo.getNextSequence(input.conversationId)
+    const id = randomUUID()
+    await this.repo.appendToolCall({
+      id,
       conversationId: input.conversationId,
       messageId: input.messageId,
       name: input.name,
       argsJson: JSON.stringify(input.args),
-      resultText: null,
       status: "running",
       sequence,
       startedAt: new Date().toISOString(),
-    });
+    })
+    return { id }
   }
 
-  recordToolCallCompleted(input: RecordToolCallCompletedInput) {
-    return this.store.completeLatestToolCall(
+  async recordToolCallCompleted(input: RecordToolCallCompletedInput): Promise<void> {
+    await this.repo.completeLatestToolCall(
       input.conversationId,
       input.name,
       input.result,
-    );
+      new Date().toISOString(),
+    )
   }
 
-  upsertTask(input: UpsertTaskInput) {
-    return this.store.upsertTask({
+  async upsertTask(input: UpsertTaskInput): Promise<void> {
+    const now = new Date().toISOString()
+    await this.repo.upsertTask({
       conversationId: input.conversationId,
       taskId: input.taskId,
-      subject: input.subject ?? null,
-      description: input.description ?? null,
+      subject: input.subject,
+      description: input.description,
       status: input.status,
-      owner: input.owner ?? null,
-      blockedBy: input.blockedBy ?? [],
-      updatedAt: new Date().toISOString(),
-    });
+      owner: input.owner,
+      blockedByJson: JSON.stringify(input.blockedBy ?? []),
+      createdAt: now,
+      updatedAt: now,
+    })
   }
 
-  recordTaskEvent(input: RecordTaskEventInput) {
-    const updatedAt = new Date().toISOString();
-    const sequence = this.store.getNextSequence(input.conversationId);
-    const existing = this.store.getTask(input.conversationId, input.taskId);
+  async recordTaskEvent(input: RecordTaskEventInput): Promise<void> {
+    const updatedAt = new Date().toISOString()
+    const sequence = await this.repo.getNextSequence(input.conversationId)
+    const existing = await this.repo.getTask(input.conversationId, input.taskId)
     if (!existing) {
-      this.store.upsertTask({
+      await this.repo.upsertTask({
         conversationId: input.conversationId,
         taskId: input.taskId,
-        subject: input.subject ?? null,
-        description: null,
+        subject: input.subject,
         status: normalizeTaskStatus(input.status),
-        owner: null,
-        blockedBy: [],
+        blockedByJson: "[]",
+        createdAt: updatedAt,
         updatedAt,
-      });
+      })
     }
-
-    return this.store.appendTaskEvent({
+    await this.repo.appendTaskEvent({
+      id: randomUUID(),
       conversationId: input.conversationId,
       taskId: input.taskId,
-      subject: input.subject ?? null,
+      subject: input.subject,
       status: input.status,
       sequence,
       updatedAt,
-    });
+    })
   }
 
-  upsertBackgroundTask(input: UpsertBackgroundTaskInput): PersistedConversationBackgroundTask {
-    return this.store.upsertBackgroundTask({
+  async upsertBackgroundTask(
+    input: UpsertBackgroundTaskInput,
+  ): Promise<PersistedConversationBackgroundTask> {
+    await this.repo.upsertBackgroundTask({
       conversationId: input.conversationId,
       taskId: input.taskId,
-      command: input.command ?? null,
-      summary: input.summary ?? null,
+      command: input.command,
+      summary: input.summary,
       status: input.status,
-      completedAt: input.completedAt ?? null,
-      exitCode: input.exitCode ?? null,
-    });
+      startedAt: new Date().toISOString(),
+      completedAt: input.completedAt ?? undefined,
+      exitCode: input.exitCode ?? undefined,
+    })
+    const task = await this.repo.getBackgroundTask(input.conversationId, input.taskId)
+    if (!task) throw new Error("Failed to upsert background task")
+    return task
   }
 
-  recordBackgroundEvent(input: RecordBackgroundEventInput) {
-    const updatedAt = new Date().toISOString();
-    const sequence = this.store.getNextSequence(input.conversationId);
-    const existing = this.store.getBackgroundTask(input.conversationId, input.taskId);
+  async recordBackgroundEvent(input: RecordBackgroundEventInput): Promise<void> {
+    const updatedAt = new Date().toISOString()
+    const sequence = await this.repo.getNextSequence(input.conversationId)
+    const existing = await this.repo.getBackgroundTask(input.conversationId, input.taskId)
     if (!existing) {
-      this.store.upsertBackgroundTask({
+      await this.repo.upsertBackgroundTask({
         conversationId: input.conversationId,
         taskId: input.taskId,
-        command: input.command ?? null,
-        summary: input.summary ?? null,
+        command: input.command,
+        summary: input.summary,
         status: input.status,
-      });
+        startedAt: updatedAt,
+      })
     }
-
-    return this.store.appendBackgroundEvent({
+    await this.repo.appendBackgroundEvent({
+      id: randomUUID(),
       conversationId: input.conversationId,
       taskId: input.taskId,
-      command: input.command ?? null,
-      summary: input.summary ?? null,
+      command: input.command,
+      summary: input.summary,
       status: input.status,
       sequence,
       updatedAt,
-    });
+    })
   }
 
-  private requireOwnedConversation(input: GetConversationInput): PersistedConversation {
-    const conversation = this.store.getConversation(input.conversationId);
+  private async requireOwnedConversation(
+    input: GetConversationInput,
+  ): Promise<PersistedConversation> {
+    const conversation = await this.repo.getConversation(input.conversationId)
     if (!conversation || conversation.userId !== input.userId) {
-      throw new Error("Conversation not found");
+      throw new Error("Conversation not found")
     }
-
-    return conversation;
+    return conversation
   }
 }
 
@@ -302,8 +359,8 @@ function normalizeTaskStatus(status: string): PersistedTaskStatus {
     case "in_progress":
     case "completed":
     case "blocked":
-      return status;
+      return status
     default:
-      return "pending";
+      return "pending"
   }
 }

@@ -310,7 +310,7 @@ export class ConversationRepository {
       .from(conversationTasks)
       .where(eq(conversationTasks.conversationId, conversationId))
       .orderBy(sql`${conversationTasks.updatedAt} ASC, ${conversationTasks.taskId} ASC`)
-    return rows as PersistedConversationTask[]
+    return rows.map((r) => ({ ...r, blockedBy: JSON.parse(r.blockedByJson) })) as PersistedConversationTask[]
   }
 
   async getTask(conversationId: string, taskId: number): Promise<PersistedConversationTask | null> {
@@ -323,7 +323,8 @@ export class ConversationRepository {
           eq(conversationTasks.taskId, taskId),
         ),
       )
-    return (rows[0] as PersistedConversationTask) ?? null
+    if (!rows[0]) return null
+    return { ...rows[0], blockedBy: JSON.parse(rows[0].blockedByJson) } as PersistedConversationTask
   }
 
   async deleteConversationTasks(conversationId: string): Promise<void> {
