@@ -1,6 +1,6 @@
 import { Hono, type MiddlewareHandler } from "hono"
 import { streamSSE } from "hono/streaming"
-import { auth } from "../auth.js"
+import { auth } from "../lib/auth.ts"
 
 type SessionPayload = NonNullable<Awaited<ReturnType<typeof auth.api.getSession>>>
 type AppEnv = {

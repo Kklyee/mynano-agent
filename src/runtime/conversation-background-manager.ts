@@ -1,170 +1,95 @@
-import { execaCommand } from "execa"
-import type { ConversationService } from "../services/conversation-service.js"
+import type { ConversationService } from "../services/conversation-service.js";
 import type {
-  BackgroundManagerContract,
-  BackgroundNotification,
-  BackgroundTask,
-  BackgroundTaskStatus,
-} from "../types/index.js"
-
-type BackgroundExecutionResult = {
-  exitCode: number
-  stdout: string
-  stderr: string
-}
-
-export type BackgroundExecutor = (
-  command: string,
-  cwd: string,
-) => Promise<BackgroundExecutionResult>
-
-const defaultBackgroundExecutor: BackgroundExecutor = async (command, cwd) => {
-  const result = await execaCommand(command, {
-    cwd,
-    shell: true,
-    reject: false,
-  })
-
-  return {
-    exitCode: result.exitCode ?? 0,
-    stdout: result.stdout ?? "",
-    stderr: result.stderr ?? "",
-  }
-}
+	BackgroundManagerContract,
+	BackgroundNotification,
+	BackgroundTask
+} from "../types/index.js";
+import { BackgroundManager } from "./background-manager.js";
 
 export class ConversationBackgroundManager implements BackgroundManagerContract {
-  private readonly tasks = new Map<string, BackgroundTask>()
-  private notificationQueue: BackgroundNotification[] = []
-  private nextId = 1
+	private readonly core: BackgroundManager;
 
-  constructor(
-    private readonly conversationService: ConversationService,
-    private readonly conversationId: string,
-    private readonly executor: BackgroundExecutor = defaultBackgroundExecutor,
-  ) {}
+	constructor(
+		private readonly conversationService: ConversationService,
+		private readonly conversationId: string
+	) {
+		this.core = new BackgroundManager();
+	}
 
-  async run(command: string, cwd: string): Promise<BackgroundTask> {
-    const taskId = `bg_${this.nextId++}`
-    const task: BackgroundTask = {
-      id: taskId,
-      command,
-      cwd,
-      status: "running",
-      startedAt: Date.now(),
-    }
-    await this.conversationService.upsertBackgroundTask({
-      conversationId: this.conversationId,
-      taskId,
-      command,
-      status: "running",
-    })
-    await this.conversationService.recordBackgroundEvent({
-      conversationId: this.conversationId,
-      taskId,
-      command,
-      status: "running",
-    })
-    this.tasks.set(taskId, task)
-    void this.execute(taskId, command, cwd)
-    return { ...task }
-  }
+	async run(command: string, cwd: string): Promise<BackgroundTask> {
+		const task = await this.core.run(command, cwd);
+		// 同步 DB：创建任务记录
+		await this.conversationService.upsertBackgroundTask({
+			conversationId: this.conversationId,
+			taskId: task.id,
+			command: task.command,
+			status: "running"
+		});
+		await this.conversationService.recordBackgroundEvent({
+			conversationId: this.conversationId,
+			taskId: task.id,
+			command: task.command,
+			status: "running"
+		});
+		return task;
+	}
 
-  check(taskId: string): BackgroundTask | null {
-    const task = this.tasks.get(taskId)
-    return task ? { ...task } : null
-  }
+	check(taskId: string): BackgroundTask | null {
+		return this.core.check(taskId);
+	}
 
-  list(): BackgroundTask[] {
-    return [...this.tasks.values()].map((task) => ({ ...task }))
-  }
+	list(): BackgroundTask[] {
+		return this.core.list();
+	}
 
-  drainNotifications(): BackgroundNotification[] {
-    const notifications = [...this.notificationQueue]
-    this.notificationQueue = []
-    return notifications
-  }
+	async cancel(taskId: string): Promise<boolean> {
+		const task = this.core.check(taskId);
+		if (!task || task.status !== "running") {
+			return false;
+		}
+		const cancelled = await this.core.cancel(taskId);
+		if (cancelled) {
+			// 同步 DB：更新为取消状态
+			await this.conversationService.upsertBackgroundTask({
+				conversationId: this.conversationId,
+				taskId,
+				status: "failed",
+				completedAt: new Date().toISOString(),
+				exitCode: null
+			});
+			await this.conversationService.recordBackgroundEvent({
+				conversationId: this.conversationId,
+				taskId,
+				command: task.command,
+				status: "failed"
+			});
+		}
+		return cancelled;
+	}
 
-  private async execute(taskId: string, command: string, cwd: string): Promise<void> {
-    try {
-      const result = await this.executor(command, cwd)
-      await this.finishTask(taskId, {
-        status: result.exitCode === 0 ? "completed" : "failed",
-        exitCode: result.exitCode,
-        stdout: result.stdout,
-        stderr: result.stderr,
-      })
-    } catch (error: any) {
-      await this.finishTask(taskId, {
-        status: "failed",
-        error: error?.message ?? String(error),
-        stderr: error?.stderr ?? "",
-      })
-    }
-  }
+	drainNotifications(): BackgroundNotification[] {
+		// 从 core 获取通知
+		const notifications = this.core.drainNotifications();
+		// 将每个完成/失败的通知同步到 DB
+		for (const n of notifications) {
+			void this.syncNotificationToDb(n);
+		}
+		return notifications;
+	}
 
-  private async finishTask(
-    taskId: string,
-    updates: {
-      status: Exclude<BackgroundTaskStatus, "running">
-      exitCode?: number
-      stdout?: string
-      stderr?: string
-      error?: string
-    },
-  ): Promise<void> {
-    const task = this.tasks.get(taskId)
-    if (!task) {
-      return
-    }
-
-    task.status = updates.status
-    task.completedAt = Date.now()
-    task.exitCode = updates.exitCode
-    task.stdout = updates.stdout
-    task.stderr = updates.stderr
-    task.error = updates.error
-    await this.conversationService.upsertBackgroundTask({
-      conversationId: this.conversationId,
-      taskId,
-      status: updates.status,
-      completedAt: new Date().toISOString(),
-      exitCode: updates.exitCode ?? null,
-    })
-    await this.conversationService.recordBackgroundEvent({
-      conversationId: this.conversationId,
-      taskId,
-      command: task.command,
-      status: updates.status,
-    })
-    this.notificationQueue.push({
-      taskId,
-      status: updates.status,
-      command: task.command,
-      message: renderCompletionMessage(task),
-    })
-  }
-}
-
-function renderCompletionMessage(task: BackgroundTask): string {
-  const stdoutPreview = task.stdout?.trim().slice(0, 300)
-  const stderrPreview = task.stderr?.trim().slice(0, 300)
-  const parts: string[] = [
-    `Background task ${task.id} ${task.status}`,
-    `Command: ${task.command}`,
-  ]
-
-  if (task.exitCode !== undefined) {
-    parts.push(`Exit code: ${task.exitCode}`)
-  }
-  if (task.error) {
-    parts.push(`Error: ${task.error}`)
-  }
-  if (stdoutPreview) {
-    parts.push(`Stdout:\n${stdoutPreview}`)
-  }
-  if (stderrPreview) {
-    parts.push(`Stderr:\n${stderrPreview}`)
-  }
-
-  return parts.join("\n")
+	// 同步通知到 DB
+	private async syncNotificationToDb(n: BackgroundNotification): Promise<void> {
+		await this.conversationService.upsertBackgroundTask({
+			conversationId: this.conversationId,
+			taskId: n.taskId,
+			status: n.status,
+			completedAt: new Date().toISOString()
+		});
+		await this.conversationService.recordBackgroundEvent({
+			conversationId: this.conversationId,
+			taskId: n.taskId,
+			command: n.command,
+			status: n.status
+		});
+	}
 }

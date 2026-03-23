@@ -3,8 +3,8 @@ import type { ToolsType } from "./types";
 import {
   executeTool,
   getToolDefinitions,
-  type ToolContext,
 } from "./builtins";
+import type { ToolContext } from "./context";
 
 export class ToolRegistry {
   private readonly enabledTools?: ToolsType[];

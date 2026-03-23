@@ -11,6 +11,7 @@ export type AgentBackendEvent =
   | { type: "background.started"; sessionId: string; taskId: string; status: string }
   | { type: "background.updated"; sessionId: string; taskId: string; status: string }
   | { type: "session.completed"; sessionId?: string; result?: string; output?: string; steps?: number }
+  | { type: "session.cancelled"; sessionId?: string; reason?: string }
   | { type: "session.failed"; sessionId?: string; error: string };
 
 export type AgentMessage = {
@@ -59,7 +60,7 @@ export type AgentBackgroundTask = {
 export type AgentSession = {
   threadId: string | null;
   sessionId: string | null;
-  status: "idle" | "connecting" | "running" | "completed" | "failed";
+  status: "idle" | "connecting" | "running" | "completed" | "failed" | "cancelled";
   steps: number;
   lastEventType: string | null;
   error: string | null;

@@ -11,7 +11,7 @@ import {
   PlusIcon,
   SquareIcon,
 } from "lucide-react";
-import { useChat } from "@/api/hooks/use-chat";
+import { useAgentView } from "@/hooks/agent/use-agent-view";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -66,7 +66,7 @@ export function AgentStudio({
     sendPrompt,
     selectConversation,
     state,
-  } = useChat();
+  } = useAgentView();
   const [prompt, setPrompt] = useState("");
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);

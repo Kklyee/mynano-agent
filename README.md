@@ -104,11 +104,11 @@ NEXT_PUBLIC_AGENT_API_BASE_URL=http://localhost:3001
 ```ts
 import {
   createAgent,
-  createDefaultResearchAgentConfig,
+  createAgentConfig,
 } from "./src/agent/index";
 
 const agent = await createAgent(
-  createDefaultResearchAgentConfig({
+  createAgentConfig({
     workDir: process.cwd(),
   }),
 );

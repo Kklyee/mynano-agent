@@ -1,10 +1,10 @@
-export { createDefaultResearchAgentConfig } from "./config";
-export { createAgent } from "./create-agent";
+export { createAgentConfig } from "./core/config";
+export { createAgent } from "./core/create-agent";
+export type { AgentEvent } from "./core/events";
 export type {
-  Agent,
-  AgentRunResult,
-  AgentSession,
-  AgentState,
-  CreateAgentOptions,
-} from "./types";
-export type { AgentEvent } from "./events";
+	Agent,
+	AgentRunResult,
+	AgentSession,
+	AgentState,
+	CreateAgentOptions
+} from "./core/types";

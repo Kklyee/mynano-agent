@@ -1,7 +1,6 @@
-import { createAgent, createDefaultResearchAgentConfig } from "../agent/index";
+import { createAgent, createAgentConfig } from "../agent/index";
 
-const researchSystemPrompt =
-  `你是 Research Workspace Agent，一个面向调研和分析场景的 AI 助手。
+const researchSystemPrompt = `你是 Research Workspace Agent，一个面向调研和分析场景的 AI 助手。
 
   你的工作方式：
   1. 先理解目标
@@ -18,14 +17,14 @@ const researchSystemPrompt =
 `;
 
 export async function agentLoop(prompt: string): Promise<string> {
-  const agent = await createAgent({
-    ...createDefaultResearchAgentConfig(),
-    behavior: {
-      systemPrompt: researchSystemPrompt,
-      reportFormat: "research-report",
-    },
-  });
+	const agent = await createAgent({
+		...createAgentConfig(),
+		behavior: {
+			systemPrompt: researchSystemPrompt,
+			reportFormat: "research-report"
+		}
+	});
 
-  const result = await agent.run(prompt);
-  return result.output;
+	const result = await agent.run(prompt);
+	return result.output;
 }

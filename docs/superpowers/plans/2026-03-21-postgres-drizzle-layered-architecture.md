@@ -34,7 +34,7 @@
 | `src/db/schema.ts` | Delete | replaced by Drizzle schema |
 | `src/stores/conversation-store.ts` | Delete | replaced by repository |
 | `src/types/conversation.ts` | No change | already defines all needed types (ConversationDetail, PreparedConversationRun, Persisted* types) |
-| `src/agent/index.ts` | No change | exports createAgent and createDefaultResearchAgentConfig used by server.ts |
+| `src/agent/index.ts` | No change | exports createAgent and createAgentConfig used by server.ts |
 
 ---
 
@@ -1423,7 +1423,7 @@ import { Hono, type MiddlewareHandler } from "hono"
 import { cors } from "hono/cors"
 import { auth } from "./auth.js"
 import { db } from "./db/index.js"
-import { createAgent, createDefaultResearchAgentConfig } from "./agent/index.js"
+import { createAgent, createAgentConfig } from "./agent/index.js"
 import { ConversationRepository } from "./repositories/conversation-repository.js"
 import { ConversationService } from "./services/conversation-service.js"
 import { authHandler } from "./handlers/auth.js"
@@ -1471,7 +1471,7 @@ export const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
 const repo = new ConversationRepository(db)
 const conversationService = new ConversationService(repo)
 const agent = await createAgent({
-  ...createDefaultResearchAgentConfig(),
+  ...createAgentConfig(),
   conversationService,
 })
 
